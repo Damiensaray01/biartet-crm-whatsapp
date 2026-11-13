@@ -9,7 +9,7 @@ const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode');
 
 const app = express();
-const PORT = 4000;
+const PORT = process.env.PORT || 4000;
 const upload = multer({ dest: 'uploads/' });
 
 app.use(cors());

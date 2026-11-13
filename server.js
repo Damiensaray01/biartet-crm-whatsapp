@@ -15,7 +15,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'Frontend', 'public')));
 
-// 1. BASE DE DATOS NATIVA EN JSON (SIN CONFLICTOS DE GLIBC O C++)
+// 1. BASE DE DATOS NATIVA EN JSON
 const DB_FILE = path.join(__dirname, 'contactos.json');
 
 function leerContactos() {
@@ -24,8 +24,7 @@ function leerContactos() {
     return [];
   }
   try {
-    const raw = fs.readFileSync(DB_FILE, 'utf8');
-    return JSON.parse(raw);
+    return JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
   } catch (e) {
     return [];
   }
@@ -35,7 +34,7 @@ function guardarContactos(lista) {
   fs.writeFileSync(DB_FILE, JSON.stringify(lista, null, 2), 'utf8');
 }
 
-// 2. DETECCIÓN AUTOMÁTICA DEL NAVEGADOR
+// 2. DETECCIÓN DE NAVEGADOR
 function obtenerRutaNavegador() {
   if (process.platform === 'win32') {
     const rutasWin = [
@@ -48,22 +47,22 @@ function obtenerRutaNavegador() {
       if (fs.existsSync(r)) return r;
     }
   }
-  return undefined; // En Linux/Render utiliza el Chromium descargado por Puppeteer
+  return undefined;
 }
 
-// 3. WHATSAPP CLIENT CON TIMEOUTS EXTENDIDOS (120 SEGUNDOS)
+// 3. WHATSAPP CLIENT CON RECONOCIMIENTO DIRECTO
 let qrActual = null;
-let estadoWhatsApp = 'desconectado'; // 'desconectado' | 'sincronizando' | 'conectado'
+let estadoWhatsApp = 'desconectado';
 let enProcesoEnvio = false;
 
 const client = new Client({
   authStrategy: new LocalAuth({ dataPath: './whatsapp_sesion' }),
-  authTimeoutMs: 120000,    // 2 minutos para autenticación en la nube
+  authTimeoutMs: 120000,
   takeoverTimeoutMs: 120000,
   puppeteer: {
     headless: true,
     executablePath: obtenerRutaNavegador(),
-    timeout: 120000,        // 2 minutos para que Puppeteer no se cierre antes de tiempo
+    timeout: 120000,
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
@@ -76,33 +75,33 @@ const client = new Client({
   }
 });
 
-// Evento: Generación de QR
 client.on('qr', async (qr) => {
   console.log('>>> Nuevo Código QR generado.');
   qrActual = await qrcode.toDataURL(qr, { width: 300, margin: 2 });
   estadoWhatsApp = 'desconectado';
 });
 
-// Evento: Escaneado por el teléfono (Oculta el QR inmediatamente)
 client.on('authenticated', () => {
-  console.log('>>> ¡ESCANEADO CON ÉXITO! Sincronizando chats con el teléfono...');
+  console.log('>>> ¡ESCANEADO CON ÉXITO! Sincronizando con el teléfono...');
   qrActual = null;
   estadoWhatsApp = 'sincronizando';
 });
 
-// Evento: Monitor de descarga de chats
-client.on('loading_screen', (percent, message) => {
-  console.log(`>>> CARGANDO CHATS: ${percent}% - ${message}`);
-});
-
-// Evento: WhatsApp 100% operativo
 client.on('ready', () => {
-  console.log('>>> ¡WHATSAPP 100% VINCULADO Y OPERATIVO!');
+  console.log('>>> ¡WHATSAPP VINCULADO CON ÉXITO (READY)!');
   estadoWhatsApp = 'conectado';
   qrActual = null;
 });
 
-// Evento: Desconexión
+// Detector de cambio de estado interno de WhatsApp
+client.on('change_state', (state) => {
+  console.log('>>> ESTADO INTERNO WHATSAPP:', state);
+  if (state === 'CONNECTED') {
+    estadoWhatsApp = 'conectado';
+    qrActual = null;
+  }
+});
+
 client.on('disconnected', (reason) => {
   console.log('WhatsApp desconectado:', reason);
   estadoWhatsApp = 'desconectado';
@@ -110,7 +109,6 @@ client.on('disconnected', (reason) => {
   iniciarWhatsApp();
 });
 
-// Inicialización blindada: evita que el servidor Node se apague por micro-retrasos de red
 function iniciarWhatsApp() {
   client.initialize().catch((err) => {
     console.error('Aviso de espera en WhatsApp (reintentando en segundo plano):', err.message);
@@ -121,7 +119,6 @@ iniciarWhatsApp();
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Normalizar números de teléfono (Venezuela u otros países a formato internacional)
 function formatearTelefono(numero) {
   let limpio = String(numero).replace(/[^0-9]/g, '');
   if (limpio.startsWith('0')) {
@@ -130,10 +127,24 @@ function formatearTelefono(numero) {
   return `${limpio}@c.us`;
 }
 
-// 4. RUTAS DE LA API
+// 4. RUTAS API (CON DETECCIÓN FORZADA DE SESIÓN ACTIVA)
+app.get('/api/whatsapp-status', async (req, res) => {
+  // Si WhatsApp ya cargó la información del usuario (wid), forzar estado CONECTADO
+  try {
+    if (client.info && client.info.wid) {
+      estadoWhatsApp = 'conectado';
+      qrActual = null;
+    } else if (client.pupPage) {
+      const state = await client.getState().catch(() => null);
+      if (state === 'CONNECTED') {
+        estadoWhatsApp = 'conectado';
+        qrActual = null;
+      }
+    }
+  } catch (e) {
+    // Continúa normalmente
+  }
 
-// Estado en vivo de la conexión
-app.get('/api/whatsapp-status', (req, res) => {
   res.json({
     estado: estadoWhatsApp,
     conectado: estadoWhatsApp === 'conectado',
@@ -143,13 +154,11 @@ app.get('/api/whatsapp-status', (req, res) => {
   });
 });
 
-// Obtener lista de clientes
 app.get('/api/contactos', (req, res) => {
   const lista = leerContactos();
   res.json(lista.sort((a, b) => b.id - a.id));
 });
 
-// Eliminar un contacto individual
 app.delete('/api/contactos/:id', (req, res) => {
   const id = parseInt(req.params.id);
   let lista = leerContactos();
@@ -158,7 +167,6 @@ app.delete('/api/contactos/:id', (req, res) => {
   res.json({ success: true });
 });
 
-// Eliminar contactos masivamente
 app.post('/api/contactos/eliminar-masivo', (req, res) => {
   const { ids } = req.body;
   if (!ids || !ids.length) return res.status(400).json({ error: "No hay IDs" });
@@ -172,13 +180,11 @@ app.post('/api/contactos/eliminar-masivo', (req, res) => {
   res.json({ success: true, eliminados: inicial - lista.length });
 });
 
-// Vaciar toda la base de datos
 app.delete('/api/contactos-todos', (req, res) => {
   guardarContactos([]);
   res.json({ success: true });
 });
 
-// Actualizar estado y observaciones del CRM
 app.put('/api/contactos/:id/estado', (req, res) => {
   const id = parseInt(req.params.id);
   const { estado, observaciones } = req.body;
@@ -192,7 +198,7 @@ app.put('/api/contactos/:id/estado', (req, res) => {
   res.json({ success: true });
 });
 
-// 5. IMPORTAR EXCEL (RECONOCE EL CINTILLO OFICIAL)
+// 5. IMPORTAR EXCEL (CINTILLO OFICIAL)
 app.post('/api/subir-excel', upload.single('archivoExcel'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Falta archivo' });
   try {
@@ -233,7 +239,7 @@ app.post('/api/subir-excel', upload.single('archivoExcel'), (req, res) => {
   }
 });
 
-// 6. DESCARGAR EXCEL CON EL CINTILLO OFICIAL
+// 6. DESCARGAR EXCEL CON CINTILLO OFICIAL
 app.get('/api/descargar-excel', (req, res) => {
   const lista = leerContactos();
   const formateados = lista.map(r => ({
@@ -255,7 +261,7 @@ app.get('/api/descargar-excel', (req, res) => {
   res.send(buffer);
 });
 
-// 7. ENVÍO MASIVO REAL CON PROTECCIÓN ANTI-BANEO
+// 7. ENVÍO MASIVO REAL
 app.post('/api/enviar-masivo', async (req, res) => {
   if (estadoWhatsApp !== 'conectado') {
     return res.status(400).json({ error: "WhatsApp no está listo. Por favor espera a que se complete la conexión." });
@@ -292,7 +298,6 @@ app.post('/api/enviar-masivo', async (req, res) => {
 
     guardarContactos(lista);
 
-    // Pausa aleatoria anti-baneo de 10 a 20 segundos
     const delay = Math.floor(Math.random() * (20000 - 10000 + 1)) + 10000;
     console.log(`Pausa de seguridad: ${delay / 1000}s...`);
     await sleep(delay);
@@ -302,5 +307,4 @@ app.post('/api/enviar-masivo', async (req, res) => {
   console.log(">>> Campaña finalizada.");
 });
 
-// 8. INICIAR SERVIDOR
 app.listen(PORT, () => console.log(`Servidor BIARTET activo en puerto ${PORT}`));

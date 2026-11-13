@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>BIARTET - CRM & WhatsApp Masivo</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+  <style>
+    :root {
+      --bg-dark: #08090b;
+      --sidebar-bg: #101217;
+      --card-bg: #141720;
+      --card-border: #242936;
+      --gold-primary: #ffc107;
+      --gold-hover: #e0a800;
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+    }
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-size: 0.88rem; /* Tamaño de texto más cómodo */
+      margin: 0;
+      overflow-x: hidden;
+    }
+
+    /* BARRA LATERAL IZQUIERDA */
+    .sidebar {
+      width: 250px;
+      height: 100vh;
+      background-color: var(--sidebar-bg);
+      border-right: 1px solid var(--card-border);
+      position: fixed;
+      top: 0;
+      left: 0;
+      display: flex;
+      flex-direction: column;
+      padding: 18px 14px;
+      z-index: 100;
+    }
+    .main-wrapper {
+      margin-left: 250px;
+      padding: 20px 28px;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* BOTONES DE LA BARRA LATERAL */
+    .nav-pills-corp .nav-link {
+      color: var(--text-muted);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border: 1px solid transparent;
+      transition: all 0.2s ease;
+    }
+    .nav-pills-corp .nav-link:hover {
+      background-color: rgba(255, 193, 7, 0.08);
+      color: var(--gold-primary);
+    }
+    .nav-pills-corp .nav-link.active {
+      background-color: #1a1e29;
+      color: var(--gold-primary);
+      border-color: var(--gold-primary);
+    }
+
+    /* TARJETAS KPI COMPACTAS */
+    .kpi-card {
+      background: linear-gradient(145deg, #161922 0%, #101218 100%);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 12px 16px;
+    }
+    .kpi-label {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.6px;
+      color: #ffffff;
+      text-transform: uppercase;
+      margin-bottom: 2px;
+    }
+    .kpi-value {
+      font-size: 1.6rem;
+      font-weight: 800;
+      line-height: 1.1;
+    }
+
+    /* TABLAS COMPACTAS */
+    .table-cintillo {
+      color: #e2e8f0;
+      font-size: 0.82rem;
+      vertical-align: middle;
+    }
+    .table-cintillo thead th {
+      background-color: #1a1e27;
+      color: var(--gold-primary);
+      border-bottom: 2px solid var(--gold-primary);
+      padding: 10px 12px;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      white-space: nowrap;
+    }
+    .table-cintillo tbody tr {
+      border-bottom: 1px solid var(--card-border);
+    }
+    .table-cintillo tbody tr:hover {
+      background-color: #171b24;
+    }
+    .table-cintillo tbody td {
+      padding: 8px 12px;
+    }
+
+    .btn-gold {
+      background-color: var(--gold-primary);
+      color: #000;
+      font-weight: 700;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.82rem;
+      padding: 8px 16px;
+    }
+    .btn-gold:hover {
+      background-color: var(--gold-hover);
+      color: #000;
+    }
+    .card-corp {
+      background-color: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+    }
+    .form-control, .form-select {
+      font-size: 0.83rem;
+    }
+    
+    /* PIE DE PÁGINA */
+    .footer-corporate {
+      margin-top: auto;
+      border-top: 1px solid var(--card-border);
+      padding: 18px 0 10px 0;
+      font-size: 0.75rem;
+      color: #94a3b8;
+      text-align: center;
+      line-height: 1.6;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- BARRA LATERAL -->
+  <aside class="sidebar">
+    <!-- LOGO BIARTET (Cargado directamente desde logo2.png) -->
+    <div class="mb-3 text-center pb-3 border-bottom border-secondary">
+      <img src="logo2.png" alt="BIARTET" style="max-width: 210px; max-height: 58px; object-fit: contain;" 
+           onerror="this.onerror=null; this.src='logo2.png';">
+      <div class="mt-2" style="font-size: 0.6rem; color: #cbd5e1; letter-spacing: 1px; font-weight: 800;">
+        SOLUCIONES PARA TU EMPRESA
+      </div>
+    </div>
+
+    <!-- PESTAÑAS -->
+    <div class="nav flex-column nav-pills-corp" id="menu-tabs" role="tablist">
+      <button class="nav-link active" data-bs-toggle="pill" data-bs-target="#tab-campana">
+        <i class="bi bi-send-check-fill"></i> Campaña y Envíos
+      </button>
+      <button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-crm" onclick="cargarContactos()">
+        <i class="bi bi-kanban"></i> Seguimiento CRM
+      </button>
+      <button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-bd" onclick="cargarContactos()">
+        <i class="bi bi-database-fill-gear"></i> Visión General BDD
+      </button>
+    </div>
+
+    <!-- ESTADO DE WHATSAPP -->
+    <div class="mt-auto pt-2 border-top border-secondary">
+      <div id="sidebar-status-pill" class="badge w-100 p-2 text-start d-flex align-items-center gap-2 bg-secondary" style="font-size: 0.75rem;">
+        <span class="spinner-border spinner-border-sm" style="width: 12px; height: 12px;"></span>
+        <span id="sidebar-status-text">Conectando...</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- CONTENIDO PRINCIPAL -->
+  <main class="main-wrapper">
+    
+    <!-- BARRA SUPERIOR -->
+    <div class="d-flex justify-content-between align-items-center pb-2 mb-3 border-bottom border-secondary">
+      <div>
+        <h5 class="fw-bold mb-0 text-white">Panel de Control & Despacho Masivo</h5>
+        <small class="text-secondary" style="font-size: 0.75rem;">Gestión de Portabilidades y Contacto Directo</small>
+      </div>
+      <div class="d-flex gap-2">
+        <button class="btn btn-outline-warning btn-sm" onclick="descargarExcel()">
+          <i class="bi bi-file-earmark-arrow-down"></i> Descargar Excel
+        </button>
+        <button class="btn btn-outline-danger btn-sm" onclick="vaciarTodaLaBD()">
+          <i class="bi bi-trash3"></i> Vaciar BDD
+        </button>
+      </div>
+    </div>
+
+    <!-- TARJETAS MÉTRICAS KPI -->
+    <div class="row g-2 mb-3">
+      <div class="col">
+        <div class="kpi-card" style="border-left: 3px solid var(--gold-primary);">
+          <div class="kpi-label">TOTAL CONTACTOS</div>
+          <div class="kpi-value text-white" id="kpi-total">0</div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="kpi-card" style="border-left: 3px solid #64748b;">
+          <div class="kpi-label">PENDIENTES</div>
+          <div class="kpi-value text-secondary" id="kpi-pendiente">0</div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="kpi-card" style="border-left: 3px solid #0d6efd;">
+          <div class="kpi-label">ENVIADOS</div>
+          <div class="kpi-value text-primary" id="kpi-enviado">0</div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="kpi-card" style="border-left: 3px solid #198754;">
+          <div class="kpi-label">INTERESADOS</div>
+          <div class="kpi-value text-success" id="kpi-interesado">0</div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="kpi-card" style="border-left: 3px solid #dc3545;">
+          <div class="kpi-label">RECHAZADOS</div>
+          <div class="kpi-value text-danger" id="kpi-rechazado">0</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- QR MODAL/CARD (SI NO ESTÁ CONECTADO) -->
+    <div id="panel-qr" class="card-corp p-4 mb-3 text-center border-warning" style="display: none;">
+      <h6 class="fw-bold text-warning mb-2"><i class="bi bi-qr-code-scan"></i> Vincula tu WhatsApp Empresarial</h6>
+      <p class="text-white small mx-auto mb-2" style="max-width: 600px;">
+        Abre WhatsApp en tu teléfono ➔ Menú ➔ <b>Dispositivos vinculados</b> ➔ <b>Vincular un dispositivo</b> y apunta con la cámara:
+      </p>
+      <div class="p-2 bg-white rounded d-inline-block shadow">
+        <img id="img-qr" src="" alt="QR" style="width: 250px; height: 250px;">
+      </div>
+    </div>
+
+    <!-- VISTAS / PESTAÑAS -->
+    <div class="tab-content flex-grow-1">
+      
+      <!-- PESTAÑA 1: CAMPAÑA -->
+      <div class="tab-pane fade show active" id="tab-campana">
+        <div class="row g-3 mb-3">
+          <div class="col-lg-7">
+            <div class="card card-corp p-3 h-100 shadow-sm">
+              <div class="d-flex justify-content-between align-items-center mb-1">
+                <h6 class="fw-bold text-warning mb-0"><i class="bi bi-chat-text-fill"></i> Mensaje de Campaña</h6>
+                <small class="text-muted" style="font-size: 0.72rem;">Variables: <code>{nombre}</code> <code>{apellido}</code></small>
+              </div>
+              <textarea id="plantilla" class="form-control bg-dark text-white border-secondary my-2" rows="3">Hola {nombre} {apellido}, un saludo del equipo de BIARTET. Nos gustaría coordinar una llamada informativa sobre nuestros servicios.</textarea>
+              <div class="d-flex justify-content-between align-items-center mt-1">
+                <button class="btn btn-gold btn-sm" id="btn-envio-masivo" onclick="iniciarEnvioMasivo()">
+                  <i class="bi bi-lightning-charge-fill"></i> Iniciar Envío Masivo Seguro
+                </button>
+                <span id="estado-envio" class="small text-warning fw-bold" style="font-size: 0.75rem;"></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-lg-5">
+            <div class="card card-corp p-3 h-100 shadow-sm">
+              <h6 class="fw-bold text-warning mb-1"><i class="bi bi-file-earmark-arrow-up-fill"></i> Importar Excel</h6>
+              <small class="text-muted d-block mb-2" style="font-size: 0.72rem;">Formato: <b>Fecha de carga, Nº Portabilidad, Nombres, Apellidos</b></small>
+              <input type="file" id="inputExcel" class="form-control form-control-sm bg-dark text-white border-secondary mb-2" accept=".xlsx, .xls">
+              <button class="btn btn-outline-warning btn-sm w-100 fw-bold" onclick="subirExcel()">
+                <i class="bi bi-upload"></i> Cargar a la Base de Datos
+              </button>
+              <div id="msg-subida" class="mt-1 small text-info fw-bold" style="font-size: 0.72rem;"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TABLA DESTINATARIOS -->
+        <div class="card card-corp p-3 shadow-sm">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="fw-bold text-warning mb-0"><i class="bi bi-table"></i> Destinatarios</h6>
+            <button class="btn btn-danger btn-sm py-1 px-2" id="btn-eliminar-seleccionados" onclick="eliminarSeleccionados()" style="display: none; font-size: 0.75rem;">
+              <i class="bi bi-trash3-fill"></i> Eliminar (<span id="count-sel">0</span>)
+            </button>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-cintillo mb-0">
+              <thead>
+                <tr>
+                  <th width="30"><input type="checkbox" id="check-todos" onchange="toggleCheckTodos(this)"></th>
+                  <th>Fecha de carga</th>
+                  <th>N° Portabilidad</th>
+                  <th>Nombres</th>
+                  <th>Apellidos</th>
+                  <th>Estado</th>
+                  <th class="text-end">Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="tabla-envios"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- PESTAÑA 2: SEGUIMIENTO CRM -->
+      <div class="tab-pane fade" id="tab-crm">
+        <div class="card card-corp p-3 shadow-sm">
+          <h6 class="fw-bold text-warning mb-2"><i class="bi bi-funnel-fill"></i> Seguimiento & Respuestas</h6>
+          <div class="table-responsive">
+            <table class="table table-cintillo mb-0">
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>N° Portabilidad</th>
+                  <th>Contacto</th>
+                  <th width="170">Estado</th>
+                  <th>Observaciones</th>
+                  <th width="80" class="text-center">Guardar</th>
+                  <th width="40"></th>
+                </tr>
+              </thead>
+              <tbody id="tabla-seguimiento"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- PESTAÑA 3: VISIÓN GENERAL BDD -->
+      <div class="tab-pane fade" id="tab-bd">
+        <div class="card card-corp p-3 shadow-sm">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="fw-bold text-warning mb-0"><i class="bi bi-database-check"></i> Base de Datos Completa</h6>
+            <button class="btn btn-gold btn-sm py-1 px-2" onclick="descargarExcel()">
+              <i class="bi bi-download"></i> Descargar Excel
+            </button>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-cintillo mb-0">
+              <thead>
+                <tr>
+                  <th>Fecha de carga</th>
+                  <th>N° Portabilidad</th>
+                  <th>Nombres</th>
+                  <th>Apellidos</th>
+                  <th>Estado</th>
+                  <th>Observaciones</th>
+                </tr>
+              </thead>
+              <tbody id="tabla-general"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- PIE DE PÁGINA CORPORATIVO OFICIAL -->
+    <footer class="footer-corporate">
+      <div class="fw-bold text-white mb-1">RIF: J-504900826 | CONSORCIO BIARTE, C.A.</div>
+      <div>Dirección: Av Casanova, CC El Recreo, nivel 9, of 9A, Urb El Recreo, Caracas, Distrito Capital, zona postal 1050</div>
+      <div><i class="bi bi-whatsapp text-success me-1"></i>WhatsApp: (+58) 426-5101583</div>
+      <div class="text-warning fw-bold mt-1" style="letter-spacing: 0.8px;">DEPARTAMENTO DE BUSINESS INTELLIGENCE 2026</div>
+    </footer>
+
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    let clientesGlobal = [];
+    let waConectado = false;
+
+    async function verificarWhatsApp() {
+      try {
+        const res = await fetch('/api/whatsapp-status');
+        const data = await res.json();
+        waConectado = data.conectado;
+
+        const pill = document.getElementById('sidebar-status-pill');
+        const text = document.getElementById('sidebar-status-text');
+        const panelQr = document.getElementById('panel-qr');
+        const imgQr = document.getElementById('img-qr');
+        const btnMasivo = document.getElementById('btn-envio-masivo');
+
+        if (data.conectado) {
+          pill.className = 'badge w-100 p-2 text-start d-flex align-items-center gap-2 bg-success text-white';
+          text.innerHTML = '<i class="bi bi-check-circle-fill"></i> Conectado';
+          panelQr.style.display = 'none';
+          btnMasivo.disabled = false;
+        } else if (data.qr) {
+          pill.className = 'badge w-100 p-2 text-start d-flex align-items-center gap-2 bg-warning text-dark';
+          text.innerHTML = '<i class="bi bi-qr-code"></i> Escanear QR';
+          imgQr.src = data.qr;
+          panelQr.style.display = 'block';
+          btnMasivo.disabled = true;
+        } else {
+          pill.className = 'badge w-100 p-2 text-start d-flex align-items-center gap-2 bg-secondary text-white';
+          text.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Conectando...';
+          panelQr.style.display = 'none';
+          btnMasivo.disabled = true;
+        }
+
+        if (data.enviando) {
+          document.getElementById('estado-envio').innerText = 'Enviando mensajes... (Pausa anti-baneo activa)';
+          cargarContactos();
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    setInterval(verificarWhatsApp, 3000);
+    verificarWhatsApp();
+
+    async function cargarContactos() {
+      const res = await fetch('/api/contactos');
+      clientesGlobal = await res.json();
+      renderizar();
+    }
+
+    function renderizar() {
+      const tbodyEnvios = document.getElementById('tabla-envios');
+      const tbodySeguimiento = document.getElementById('tabla-seguimiento');
+      const tbodyGeneral = document.getElementById('tabla-general');
+      
+      tbodyEnvios.innerHTML = '';
+      tbodySeguimiento.innerHTML = '';
+      tbodyGeneral.innerHTML = '';
+
+      let cPendiente = 0, cEnviado = 0, cInteresado = 0, cRechazado = 0;
+
+      clientesGlobal.forEach(c => {
+        if (c.estado === 'Pendiente') cPendiente++;
+        if (c.estado === 'Enviado') cEnviado++;
+        if (c.estado === 'Interesado') cInteresado++;
+        if (c.estado === 'Rechazado') cRechazado++;
+
+        const fechaCorte = (c.fecha || '').split('T')[0] || c.fecha || '';
+
+        tbodyEnvios.innerHTML += `
+          <tr>
+            <td><input type="checkbox" class="check-cliente" value="${c.id}" onchange="actualizarBotonEliminar()"></td>
+            <td>${fechaCorte}</td>
+            <td><strong>+${c.telefono}</strong></td>
+            <td>${c.nombre}</td>
+            <td>${c.apellido}</td>
+            <td><span class="badge ${badgeColor(c.estado)}">${c.estado}</span></td>
+            <td class="text-end">
+              <button class="btn btn-sm btn-outline-warning py-0 px-1 me-1" onclick="abrirWhatsAppManual('${c.nombre}', '${c.apellido}', '${c.telefono}')" title="WhatsApp">
+                <i class="bi bi-whatsapp"></i>
+              </button>
+              <button class="btn btn-sm btn-outline-danger py-0 px-1" onclick="eliminarCliente(${c.id})" title="Eliminar">
+                <i class="bi bi-trash"></i>
+              </button>
+            </td>
+          </tr>
+        `;
+
+        tbodySeguimiento.innerHTML += `
+          <tr>
+            <td>${fechaCorte}</td>
+            <td>+${c.telefono}</td>
+            <td><strong>${c.nombre} ${c.apellido}</strong></td>
+            <td>
+              <select id="estado-${c.id}" class="form-select form-select-sm bg-dark text-white border-secondary py-0">
+                <option value="Pendiente" ${c.estado === 'Pendiente' ? 'selected' : ''}>⏳ Pendiente</option>
+                <option value="Enviado" ${c.estado === 'Enviado' ? 'selected' : ''}>📤 Enviado</option>
+                <option value="Interesado" ${c.estado === 'Interesado' ? 'selected' : ''}>✅ Interesado</option>
+                <option value="Rechazado" ${c.estado === 'Rechazado' ? 'selected' : ''}>❌ Rechazado</option>
+              </select>
+            </td>
+            <td>
+              <input type="text" id="obs-${c.id}" class="form-control form-control-sm bg-dark text-white border-secondary py-0" value="${c.observaciones || ''}">
+            </td>
+            <td class="text-center">
+              <button class="btn btn-sm btn-gold py-0 px-2" onclick="guardarSeguimiento(${c.id})"><i class="bi bi-check2"></i></button>
+            </td>
+            <td><button class="btn btn-sm text-danger p-0" onclick="eliminarCliente(${c.id})"><i class="bi bi-trash"></i></button></td>
+          </tr>
+        `;
+
+        tbodyGeneral.innerHTML += `
+          <tr>
+            <td>${fechaCorte}</td>
+            <td>+${c.telefono}</td>
+            <td>${c.nombre}</td>
+            <td>${c.apellido}</td>
+            <td><span class="badge ${badgeColor(c.estado)}">${c.estado}</span></td>
+            <td>${c.observaciones || '-'}</td>
+          </tr>
+        `;
+      });
+
+      document.getElementById('kpi-total').innerText = clientesGlobal.length;
+      document.getElementById('kpi-pendiente').innerText = cPendiente;
+      document.getElementById('kpi-enviado').innerText = cEnviado;
+      document.getElementById('kpi-interesado').innerText = cInteresado;
+      document.getElementById('kpi-rechazado').innerText = cRechazado;
+      actualizarBotonEliminar();
+    }
+
+    function badgeColor(estado) {
+      if (estado === 'Enviado') return 'bg-primary';
+      if (estado === 'Interesado') return 'bg-success';
+      if (estado === 'Rechazado') return 'bg-danger';
+      return 'bg-secondary';
+    }
+
+    async function iniciarEnvioMasivo() {
+      if (!waConectado) return alert('Debes escanear el código QR primero.');
+      const plantilla = document.getElementById('plantilla').value;
+      const res = await fetch('/api/enviar-masivo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plantillaMensaje: plantilla })
+      });
+      const data = await res.json();
+      if (data.error) alert(data.error);
+      else alert(data.mensaje);
+      cargarContactos();
+    }
+
+    async function eliminarCliente(id) {
+      if (!confirm('¿Eliminar contacto?')) return;
+      await fetch(`/api/contactos/${id}`, { method: 'DELETE' });
+      cargarContactos();
+    }
+
+    function toggleCheckTodos(master) {
+      document.querySelectorAll('.check-cliente').forEach(cb => cb.checked = master.checked);
+      actualizarBotonEliminar();
+    }
+
+    function actualizarBotonEliminar() {
+      const sel = Array.from(document.querySelectorAll('.check-cliente:checked')).map(cb => cb.value);
+      const btn = document.getElementById('btn-eliminar-seleccionados');
+      if (sel.length > 0) {
+        btn.style.display = 'inline-block';
+        document.getElementById('count-sel').innerText = sel.length;
+      } else {
+        btn.style.display = 'none';
+      }
+    }
+
+    async function eliminarSeleccionados() {
+      const ids = Array.from(document.querySelectorAll('.check-cliente:checked')).map(cb => cb.value);
+      if (!ids.length || !confirm(`¿Eliminar los ${ids.length} contactos?`)) return;
+      await fetch('/api/contactos/eliminar-masivo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids })
+      });
+      cargarContactos();
+    }
+
+    async function vaciarTodaLaBD() {
+      if (!confirm('⚠️ ¿Eliminar TODOS los contactos de la base de datos?')) return;
+      await fetch('/api/contactos-todos', { method: 'DELETE' });
+      cargarContactos();
+    }
+
+    async function guardarSeguimiento(id) {
+      const estado = document.getElementById(`estado-${id}`).value;
+      const observaciones = document.getElementById(`obs-${id}`).value;
+      await fetch(`/api/contactos/${id}/estado`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ estado, observaciones })
+      });
+      alert('Guardado exitosamente');
+      cargarContactos();
+    }
+
+    async function subirExcel() {
+      const input = document.getElementById('inputExcel');
+      if (!input.files[0]) return alert('Selecciona un archivo Excel');
+      const formData = new FormData();
+      formData.append('archivoExcel', input.files[0]);
+      document.getElementById('msg-subida').innerText = 'Cargando registros...';
+      const res = await fetch('/api/subir-excel', { method: 'POST', body: formData });
+      const data = await res.json();
+      document.getElementById('msg-subida').innerText = data.mensaje || data.error;
+      input.value = '';
+      cargarContactos();
+    }
+
+    function descargarExcel() {
+      window.location.href = '/api/descargar-excel';
+    }
+
+    function abrirWhatsAppManual(nombre, apellido, telefono) {
+      const plantilla = document.getElementById('plantilla').value;
+      const texto = plantilla.replace('{nombre}', nombre).replace('{apellido}', apellido);
+      window.open(`https://wa.me/${telefono}?text=${encodeURIComponent(texto)}`, '_blank');
+    }
+
+    cargarContactos();
+  </script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+node_modules/
+whatsapp_sesion/
+.wwebjs_cache/
+uploads/
+contactos.db
+.cache/

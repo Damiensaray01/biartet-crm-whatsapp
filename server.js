@@ -15,7 +15,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'Frontend', 'public')));
 
-// 1. BASE DE DATOS NATIVA EN JSON (CERO DEPENDENCIAS DE C++)
+// 1. BASE DE DATOS NATIVA EN JSON (SIN CONFLICTOS DE GLIBC O C++)
 const DB_FILE = path.join(__dirname, 'contactos.json');
 
 function leerContactos() {
@@ -48,25 +48,29 @@ function obtenerRutaNavegador() {
       if (fs.existsSync(r)) return r;
     }
   }
-  return undefined; // En Linux/Render usa el Chrome descargado
+  return undefined; // En Linux/Render utiliza el Chromium descargado por Puppeteer
 }
 
-// 3. WHATSAPP CLIENT CON ESTADOS DETALLADOS
+// 3. WHATSAPP CLIENT CON TIMEOUTS EXTENDIDOS (120 SEGUNDOS)
 let qrActual = null;
 let estadoWhatsApp = 'desconectado'; // 'desconectado' | 'sincronizando' | 'conectado'
 let enProcesoEnvio = false;
 
 const client = new Client({
   authStrategy: new LocalAuth({ dataPath: './whatsapp_sesion' }),
+  authTimeoutMs: 120000,    // 2 minutos para autenticación en la nube
+  takeoverTimeoutMs: 120000,
   puppeteer: {
     headless: true,
     executablePath: obtenerRutaNavegador(),
+    timeout: 120000,        // 2 minutos para que Puppeteer no se cierre antes de tiempo
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
       '--disable-gpu',
       '--no-first-run',
+      '--disable-extensions',
       '--window-size=1280,800'
     ]
   }
@@ -79,19 +83,19 @@ client.on('qr', async (qr) => {
   estadoWhatsApp = 'desconectado';
 });
 
-// Evento: Escaneado con éxito (Oculta el QR de inmediato)
+// Evento: Escaneado por el teléfono (Oculta el QR inmediatamente)
 client.on('authenticated', () => {
-  console.log('>>> ¡ESCANEADO CON ÉXITO! Sincronizando chats...');
+  console.log('>>> ¡ESCANEADO CON ÉXITO! Sincronizando chats con el teléfono...');
   qrActual = null;
   estadoWhatsApp = 'sincronizando';
 });
 
-// Evento: Monitor de carga de chats
+// Evento: Monitor de descarga de chats
 client.on('loading_screen', (percent, message) => {
   console.log(`>>> CARGANDO CHATS: ${percent}% - ${message}`);
 });
 
-// Evento: WhatsApp 100% listo para enviar
+// Evento: WhatsApp 100% operativo
 client.on('ready', () => {
   console.log('>>> ¡WHATSAPP 100% VINCULADO Y OPERATIVO!');
   estadoWhatsApp = 'conectado';
@@ -103,14 +107,21 @@ client.on('disconnected', (reason) => {
   console.log('WhatsApp desconectado:', reason);
   estadoWhatsApp = 'desconectado';
   qrActual = null;
-  client.initialize();
+  iniciarWhatsApp();
 });
 
-client.initialize();
+// Inicialización blindada: evita que el servidor Node se apague por micro-retrasos de red
+function iniciarWhatsApp() {
+  client.initialize().catch((err) => {
+    console.error('Aviso de espera en WhatsApp (reintentando en segundo plano):', err.message);
+  });
+}
+
+iniciarWhatsApp();
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Normalizar números telefónicos a formato internacional WhatsApp
+// Normalizar números de teléfono (Venezuela u otros países a formato internacional)
 function formatearTelefono(numero) {
   let limpio = String(numero).replace(/[^0-9]/g, '');
   if (limpio.startsWith('0')) {
@@ -121,7 +132,7 @@ function formatearTelefono(numero) {
 
 // 4. RUTAS DE LA API
 
-// Estado en vivo de WhatsApp
+// Estado en vivo de la conexión
 app.get('/api/whatsapp-status', (req, res) => {
   res.json({
     estado: estadoWhatsApp,
@@ -167,7 +178,7 @@ app.delete('/api/contactos-todos', (req, res) => {
   res.json({ success: true });
 });
 
-// Actualizar estado y notas del CRM
+// Actualizar estado y observaciones del CRM
 app.put('/api/contactos/:id/estado', (req, res) => {
   const id = parseInt(req.params.id);
   const { estado, observaciones } = req.body;
@@ -181,7 +192,7 @@ app.put('/api/contactos/:id/estado', (req, res) => {
   res.json({ success: true });
 });
 
-// 5. IMPORTAR EXCEL (CINTILLO OFICIAL)
+// 5. IMPORTAR EXCEL (RECONOCE EL CINTILLO OFICIAL)
 app.post('/api/subir-excel', upload.single('archivoExcel'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Falta archivo' });
   try {
@@ -222,7 +233,7 @@ app.post('/api/subir-excel', upload.single('archivoExcel'), (req, res) => {
   }
 });
 
-// 6. DESCARGAR EXCEL CON TU CINTILLO OFICIAL
+// 6. DESCARGAR EXCEL CON EL CINTILLO OFICIAL
 app.get('/api/descargar-excel', (req, res) => {
   const lista = leerContactos();
   const formateados = lista.map(r => ({

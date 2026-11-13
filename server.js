@@ -1,5 +1,4 @@
 const express = require('express');
-const sqlite3 = require('sqlite3').verbose();
 const cors = require('cors');
 const path = require('path');
 const multer = require('multer');
@@ -16,36 +15,40 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'Frontend', 'public')));
 
-// 1. BASE DE DATOS SQLITE
-const db = new sqlite3.Database('./contactos.db');
+// 1. BASE DE DATOS NATIVA (SIN PROBLEMAS DE GLIBC)
+const DB_FILE = path.join(__dirname, 'contactos.json');
 
-db.serialize(() => {
-  db.run(`CREATE TABLE IF NOT EXISTS clientes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    nombre TEXT,
-    apellido TEXT,
-    telefono TEXT,
-    estado TEXT DEFAULT 'Pendiente',
-    observaciones TEXT DEFAULT '',
-    fecha TEXT DEFAULT CURRENT_TIMESTAMP
-  )`);
-  db.run("ALTER TABLE clientes ADD COLUMN observaciones TEXT DEFAULT ''", () => {});
-  db.run("ALTER TABLE clientes ADD COLUMN fecha TEXT DEFAULT CURRENT_TIMESTAMP", () => {});
-});
-
-// 2. DETECCIÓN AUTOMÁTICA DEL NAVEGADOR EN WINDOWS
-function obtenerRutaNavegador() {
-  const rutas = [
-    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
-    `${process.env.LOCALAPPDATA}\\Google\\Chrome\\Application\\chrome.exe`
-  ];
-  for (const r of rutas) {
-    if (fs.existsSync(r)) return r;
+function leerContactos() {
+  if (!fs.existsSync(DB_FILE)) {
+    fs.writeFileSync(DB_FILE, JSON.stringify([]));
+    return [];
   }
-  return undefined;
+  try {
+    const raw = fs.readFileSync(DB_FILE, 'utf8');
+    return JSON.parse(raw);
+  } catch (e) {
+    return [];
+  }
+}
+
+function guardarContactos(lista) {
+  fs.writeFileSync(DB_FILE, JSON.stringify(lista, null, 2), 'utf8');
+}
+
+// 2. DETECCIÓN AUTOMÁTICA DE NAVEGADOR
+function obtenerRutaNavegador() {
+  if (process.platform === 'win32') {
+    const rutasWin = [
+      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+      'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+      'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+      `${process.env.LOCALAPPDATA}\\Google\\Chrome\\Application\\chrome.exe`
+    ];
+    for (const r of rutasWin) {
+      if (fs.existsSync(r)) return r;
+    }
+  }
+  return undefined; // En Linux/Render Puppeteer usa su navegador descargado
 }
 
 // 3. WHATSAPP CLIENT
@@ -58,7 +61,12 @@ const client = new Client({
   puppeteer: {
     headless: true,
     executablePath: obtenerRutaNavegador(),
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-extensions']
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-extensions'
+    ]
   }
 });
 
@@ -69,7 +77,7 @@ client.on('qr', async (qr) => {
 });
 
 client.on('ready', () => {
-  console.log('>>> WhatsApp conectado correctamente.');
+  console.log('>>> ¡WHATSAPP VINCULADO CON ÉXITO!');
   whatsappConectado = true;
   qrActual = null;
 });
@@ -94,7 +102,7 @@ function formatearTelefono(numero) {
   return `${limpio}@c.us`;
 }
 
-// 4. RUTAS
+// 4. RUTAS API
 app.get('/api/whatsapp-status', (req, res) => {
   res.json({
     conectado: whatsappConectado,
@@ -104,58 +112,62 @@ app.get('/api/whatsapp-status', (req, res) => {
 });
 
 app.get('/api/contactos', (req, res) => {
-  db.all("SELECT * FROM clientes ORDER BY id DESC", [], (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json(rows);
-  });
+  const lista = leerContactos();
+  res.json(lista.sort((a, b) => b.id - a.id));
 });
 
 app.delete('/api/contactos/:id', (req, res) => {
-  db.run("DELETE FROM clientes WHERE id = ?", [req.params.id], (err) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json({ success: true });
-  });
+  const id = parseInt(req.params.id);
+  let lista = leerContactos();
+  lista = lista.filter(c => c.id !== id);
+  guardarContactos(lista);
+  res.json({ success: true });
 });
 
 app.post('/api/contactos/eliminar-masivo', (req, res) => {
   const { ids } = req.body;
   if (!ids || !ids.length) return res.status(400).json({ error: "No hay IDs" });
-  const ph = ids.map(() => '?').join(',');
-  db.run(`DELETE FROM clientes WHERE id IN (${ph})`, ids, function(err) {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json({ success: true, eliminados: this.changes });
-  });
+  
+  const idsNum = ids.map(id => parseInt(id));
+  let lista = leerContactos();
+  const inicial = lista.length;
+  lista = lista.filter(c => !idsNum.includes(c.id));
+  guardarContactos(lista);
+  
+  res.json({ success: true, eliminados: inicial - lista.length });
 });
 
 app.delete('/api/contactos-todos', (req, res) => {
-  db.run("DELETE FROM clientes", (err) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json({ success: true });
-  });
+  guardarContactos([]);
+  res.json({ success: true });
 });
 
 app.put('/api/contactos/:id/estado', (req, res) => {
-  const { id } = req.params;
+  const id = parseInt(req.params.id);
   const { estado, observaciones } = req.body;
-  db.run("UPDATE clientes SET estado = ?, observaciones = ? WHERE id = ?", [estado, observaciones || '', id], (err) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json({ success: true });
-  });
+  let lista = leerContactos();
+  const c = lista.find(item => item.id === id);
+  if (c) {
+    if (estado) c.estado = estado;
+    if (observaciones !== undefined) c.observaciones = observaciones;
+    guardarContactos(lista);
+  }
+  res.json({ success: true });
 });
 
-// 5. IMPORTAR EXCEL (RECONOCE EL CINTILLO: Fecha de carga, Nº Portabilidad, Nombres, Apellidos)
+// 5. IMPORTAR EXCEL (CINTILLO OFICIAL)
 app.post('/api/subir-excel', upload.single('archivoExcel'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Falta archivo' });
   try {
     const wb = XLSX.readFile(req.file.path);
     const filas = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-    const stmt = db.prepare("INSERT INTO clientes (fecha, telefono, nombre, apellido, estado, observaciones) VALUES (?, ?, ?, ?, 'Pendiente', '')");
+    const lista = leerContactos();
+    
+    let proximoId = lista.reduce((max, c) => c.id > max ? c.id : max, 0) + 1;
+    const fechaHoy = new Date().toISOString().split('T')[0];
     let count = 0;
 
-    const fechaHoy = new Date().toISOString().split('T')[0];
-
     filas.forEach(f => {
-      // Soporta los encabezados de tu cintillo exacto
       const fecha = f['Fecha de carga'] || f['Fecha'] || f['fecha'] || fechaHoy;
       const rawTel = f['Nº Portabilidad'] || f['N° Portabilidad'] || f['Portabilidad'] || f['Telefono'] || f['telefono'] || f['Celular'] || '';
       const telefono = String(rawTel).replace(/[^0-9]/g, '');
@@ -163,14 +175,22 @@ app.post('/api/subir-excel', upload.single('archivoExcel'), (req, res) => {
       const apellido = f['Apellidos'] || f['Apellido'] || f['apellidos'] || f['apellido'] || '';
 
       if (telefono) {
-        stmt.run(fecha, telefono, nombre, apellido);
+        lista.push({
+          id: proximoId++,
+          fecha: fecha,
+          telefono: telefono,
+          nombre: nombre,
+          apellido: apellido,
+          estado: 'Pendiente',
+          observaciones: ''
+        });
         count++;
       }
     });
 
-    stmt.finalize();
+    guardarContactos(lista);
     fs.unlinkSync(req.file.path);
-    res.json({ mensaje: `¡Éxito! Se cargaron ${count} contactos con el formato oficial.` });
+    res.json({ mensaje: `¡Éxito! Se cargaron ${count} contactos correctamente.` });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -178,63 +198,62 @@ app.post('/api/subir-excel', upload.single('archivoExcel'), (req, res) => {
 
 // 6. DESCARGAR EXCEL CON TU CINTILLO OFICIAL
 app.get('/api/descargar-excel', (req, res) => {
-  db.all("SELECT fecha, telefono, nombre, apellido, estado, observaciones FROM clientes ORDER BY id DESC", [], (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
+  const lista = leerContactos();
+  const formateados = lista.map(r => ({
+    'Fecha de carga': r.fecha || '',
+    'N° Portabilidad': r.telefono || '',
+    'Nombres': r.nombre || '',
+    'Apellidos': r.apellido || '',
+    'Estado': r.estado || 'Pendiente',
+    'Observaciones': r.observaciones || ''
+  }));
 
-    const formateados = rows.map(r => ({
-      'Fecha de carga': r.fecha || '',
-      'N° Portabilidad': r.telefono || '',
-      'Nombres': r.nombre || '',
-      'Apellidos': r.apellido || '',
-      'Estado': r.estado || 'Pendiente',
-      'Observaciones': r.observaciones || ''
-    }));
+  const ws = XLSX.utils.json_to_sheet(formateados);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Base_Datos_BIARTET");
 
-    const ws = XLSX.utils.json_to_sheet(formateados);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Base_Datos_BIARTET");
-
-    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-    res.setHeader('Content-Disposition', 'attachment; filename="Base_Datos_BIARTET.xlsx"');
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.send(buffer);
-  });
+  const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  res.setHeader('Content-Disposition', 'attachment; filename="Base_Datos_BIARTET.xlsx"');
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.send(buffer);
 });
 
-// 7. ENVÍO MASIVO REAL
+// 7. ENVÍO MASIVO REAL CON PROTECCIÓN ANTI-BANEO
 app.post('/api/enviar-masivo', async (req, res) => {
   if (!whatsappConectado) return res.status(400).json({ error: "WhatsApp no está vinculado. Escanea el código QR." });
   if (enProcesoEnvio) return res.status(400).json({ error: "Ya hay una campaña en curso." });
 
   const { plantillaMensaje } = req.body;
+  let lista = leerContactos();
+  const pendientes = lista.filter(c => c.estado === 'Pendiente');
 
-  db.all("SELECT * FROM clientes WHERE estado = 'Pendiente'", async (err, clientes) => {
-    if (err) return res.status(500).json({ error: err.message });
-    if (clientes.length === 0) return res.json({ mensaje: "No hay clientes en estado 'Pendiente'." });
+  if (pendientes.length === 0) return res.json({ mensaje: "No hay clientes en estado 'Pendiente'." });
 
-    enProcesoEnvio = true;
-    res.json({ mensaje: `Iniciando envío a ${clientes.length} contactos.` });
+  enProcesoEnvio = true;
+  res.json({ mensaje: `Iniciando envío a ${pendientes.length} contactos.` });
 
-    for (const c of clientes) {
-      try {
-        const texto = plantillaMensaje.replace('{nombre}', c.nombre).replace('{apellido}', c.apellido);
-        const chatId = formatearTelefono(c.telefono);
+  for (const c of pendientes) {
+    try {
+      const texto = plantillaMensaje.replace('{nombre}', c.nombre).replace('{apellido}', c.apellido);
+      const chatId = formatearTelefono(c.telefono);
 
-        console.log(`[BIARTET ENVÍO REAL A ${chatId}]`);
-        await client.sendMessage(chatId, texto);
+      console.log(`[BIARTET ENVÍO REAL A ${chatId}]`);
+      await client.sendMessage(chatId, texto);
 
-        db.run("UPDATE clientes SET estado = 'Enviado' WHERE id = ?", [c.id]);
-      } catch (e) {
-        console.error(`Error enviando a ${c.telefono}:`, e.message);
-        db.run("UPDATE clientes SET estado = 'Rechazado', observaciones = 'Fallo en envío / No existe' WHERE id = ?", [c.id]);
-      }
-
-      const delay = Math.floor(Math.random() * (20000 - 10000 + 1)) + 10000;
-      await sleep(delay);
+      c.estado = 'Enviado';
+    } catch (e) {
+      console.error(`Error enviando a ${c.telefono}:`, e.message);
+      c.estado = 'Rechazado';
+      c.observaciones = 'Fallo en envío o no tiene WhatsApp';
     }
 
-    enProcesoEnvio = false;
-  });
+    guardarContactos(lista);
+
+    const delay = Math.floor(Math.random() * (20000 - 10000 + 1)) + 10000;
+    await sleep(delay);
+  }
+
+  enProcesoEnvio = false;
 });
 
-app.listen(PORT, () => console.log(`Servidor BIARTET activo en http://localhost:${PORT}`));
+app.listen(PORT, () => console.log(`Servidor BIARTET activo en puerto ${PORT}`));

@@ -65,15 +65,14 @@ const client = new Client({
       '--no-sandbox',
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
-      '--disable-accelerated-2d-canvas',
-      '--no-first-run',
-      '--no-zygote',
       '--disable-gpu',
-      '--single-process' // Reduce drásticamente el consumo de RAM en Render
+      '--no-first-run'
     ]
   },
-  // Simular ser un navegador Google Chrome real en Windows para evitar que WhatsApp rechace la vinculación
-  userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+  webVersionCache: {
+    type: 'remote',
+    remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html'
+  }
 });
 
 client.on('qr', async (qr) => {

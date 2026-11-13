@@ -20,12 +20,11 @@
       background-color: var(--bg-dark);
       color: var(--text-main);
       font-family: 'Segoe UI', system-ui, sans-serif;
-      font-size: 0.88rem; /* Tamaño de texto más cómodo */
+      font-size: 0.88rem;
       margin: 0;
       overflow-x: hidden;
     }
 
-    /* BARRA LATERAL IZQUIERDA */
     .sidebar {
       width: 250px;
       height: 100vh;
@@ -47,7 +46,6 @@
       flex-direction: column;
     }
 
-    /* BOTONES DE LA BARRA LATERAL */
     .nav-pills-corp .nav-link {
       color: var(--text-muted);
       border-radius: 8px;
@@ -71,7 +69,6 @@
       border-color: var(--gold-primary);
     }
 
-    /* TARJETAS KPI COMPACTAS */
     .kpi-card {
       background: linear-gradient(145deg, #161922 0%, #101218 100%);
       border: 1px solid var(--card-border);
@@ -92,7 +89,6 @@
       line-height: 1.1;
     }
 
-    /* TABLAS COMPACTAS */
     .table-cintillo {
       color: #e2e8f0;
       font-size: 0.82rem;
@@ -139,8 +135,7 @@
     .form-control, .form-select {
       font-size: 0.83rem;
     }
-    
-    /* PIE DE PÁGINA */
+
     .footer-corporate {
       margin-top: auto;
       border-top: 1px solid var(--card-border);
@@ -156,16 +151,14 @@
 
   <!-- BARRA LATERAL -->
   <aside class="sidebar">
-    <!-- LOGO BIARTET (Cargado directamente desde logo2.png) -->
     <div class="mb-3 text-center pb-3 border-bottom border-secondary">
-      <img src="logo2.png" alt="BIARTET" style="max-width: 210px; max-height: 58px; object-fit: contain;" 
-           onerror="this.onerror=null; this.src='logo2.png';">
-      <div class="mt-2" style="font-size: 0.6rem; color: #cbd5e1; letter-spacing: 1px; font-weight: 800;">
+      <img src="logo2.png" alt="BIARTET" style="max-width: 190px; max-height: 58px; object-fit: contain;" 
+           onerror="this.onerror=null; this.src='logo.png';">
+      <div class="mt-2" style="font-size: 0.6rem; color: #cbd5e1; letter-spacing: 1px; font-weight: 600;">
         SOLUCIONES PARA TU EMPRESA
       </div>
     </div>
 
-    <!-- PESTAÑAS -->
     <div class="nav flex-column nav-pills-corp" id="menu-tabs" role="tablist">
       <button class="nav-link active" data-bs-toggle="pill" data-bs-target="#tab-campana">
         <i class="bi bi-send-check-fill"></i> Campaña y Envíos
@@ -178,7 +171,6 @@
       </button>
     </div>
 
-    <!-- ESTADO DE WHATSAPP -->
     <div class="mt-auto pt-2 border-top border-secondary">
       <div id="sidebar-status-pill" class="badge w-100 p-2 text-start d-flex align-items-center gap-2 bg-secondary" style="font-size: 0.75rem;">
         <span class="spinner-border spinner-border-sm" style="width: 12px; height: 12px;"></span>
@@ -197,6 +189,9 @@
         <small class="text-secondary" style="font-size: 0.75rem;">Gestión de Portabilidades y Contacto Directo</small>
       </div>
       <div class="d-flex gap-2">
+        <button class="btn btn-outline-info btn-sm" onclick="restablecerRechazados()" title="Pasar rechazados a pendientes">
+          <i class="bi bi-arrow-counterclockwise"></i> Reintentar Rechazados
+        </button>
         <button class="btn btn-outline-warning btn-sm" onclick="descargarExcel()">
           <i class="bi bi-file-earmark-arrow-down"></i> Descargar Excel
         </button>
@@ -240,7 +235,7 @@
       </div>
     </div>
 
-    <!-- QR MODAL/CARD (SI NO ESTÁ CONECTADO) -->
+    <!-- QR MODAL/CARD -->
     <div id="panel-qr" class="card-corp p-4 mb-3 text-center border-warning" style="display: none;">
       <h6 class="fw-bold text-warning mb-2"><i class="bi bi-qr-code-scan"></i> Vincula tu WhatsApp Empresarial</h6>
       <p class="text-white small mx-auto mb-2" style="max-width: 600px;">
@@ -286,7 +281,6 @@
           </div>
         </div>
 
-        <!-- TABLA DESTINATARIOS -->
         <div class="card card-corp p-3 shadow-sm">
           <div class="d-flex justify-content-between align-items-center mb-2">
             <h6 class="fw-bold text-warning mb-0"><i class="bi bi-table"></i> Destinatarios</h6>
@@ -365,7 +359,7 @@
 
     </div>
 
-    <!-- PIE DE PÁGINA CORPORATIVO OFICIAL -->
+    <!-- PIE DE PÁGINA -->
     <footer class="footer-corporate">
       <div class="fw-bold text-white mb-1">RIF: J-504900826 | CONSORCIO BIARTE, C.A.</div>
       <div>Dirección: Av Casanova, CC El Recreo, nivel 9, of 9A, Urb El Recreo, Caracas, Distrito Capital, zona postal 1050</div>
@@ -397,6 +391,11 @@
           text.innerHTML = '<i class="bi bi-check-circle-fill"></i> Conectado';
           panelQr.style.display = 'none';
           btnMasivo.disabled = false;
+        } else if (data.sincronizando) {
+          pill.className = 'badge w-100 p-2 text-start d-flex align-items-center gap-2 bg-info text-dark';
+          text.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Sincronizando chats...';
+          panelQr.style.display = 'none';
+          btnMasivo.disabled = true;
         } else if (data.qr) {
           pill.className = 'badge w-100 p-2 text-start d-flex align-items-center gap-2 bg-warning text-dark';
           text.innerHTML = '<i class="bi bi-qr-code"></i> Escanear QR';
@@ -423,9 +422,13 @@
     verificarWhatsApp();
 
     async function cargarContactos() {
-      const res = await fetch('/api/contactos');
-      clientesGlobal = await res.json();
-      renderizar();
+      try {
+        const res = await fetch('/api/contactos');
+        clientesGlobal = await res.json();
+        renderizar();
+      } catch (e) {
+        console.error("Error cargando contactos:", e);
+      }
     }
 
     function renderizar() {
@@ -445,7 +448,9 @@
         if (c.estado === 'Interesado') cInteresado++;
         if (c.estado === 'Rechazado') cRechazado++;
 
-        const fechaCorte = (c.fecha || '').split('T')[0] || c.fecha || '';
+        // Conversión a texto 100% segura para evitar que la tabla se rompa con fechas de Excel
+        const fechaStr = String(c.fecha || '');
+        const fechaCorte = fechaStr.includes('T') ? fechaStr.split('T')[0] : fechaStr;
 
         tbodyEnvios.innerHTML += `
           <tr>
@@ -517,7 +522,7 @@
     }
 
     async function iniciarEnvioMasivo() {
-      if (!waConectado) return alert('Debes escanear el código QR primero.');
+      if (!waConectado) return alert('Debes esperar a que WhatsApp esté en estado Conectado.');
       const plantilla = document.getElementById('plantilla').value;
       const res = await fetch('/api/enviar-masivo', {
         method: 'POST',
@@ -527,6 +532,11 @@
       const data = await res.json();
       if (data.error) alert(data.error);
       else alert(data.mensaje);
+      cargarContactos();
+    }
+
+    async function restablecerRechazados() {
+      await fetch('/api/contactos/restablecer-pendientes', { method: 'POST' });
       cargarContactos();
     }
 

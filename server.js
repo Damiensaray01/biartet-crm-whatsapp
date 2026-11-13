@@ -15,7 +15,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'Frontend', 'public')));
 
-// 1. BASE DE DATOS NATIVA EN JSON
+// 1. BASE DE DATOS JSON NATIVA
 const DB_FILE = path.join(__dirname, 'contactos.json');
 
 function leerContactos() {
@@ -50,7 +50,7 @@ function obtenerRutaNavegador() {
   return undefined;
 }
 
-// 3. WHATSAPP CLIENT CON RECONOCIMIENTO DIRECTO
+// 3. WHATSAPP CLIENT
 let qrActual = null;
 let estadoWhatsApp = 'desconectado';
 let enProcesoEnvio = false;
@@ -88,18 +88,9 @@ client.on('authenticated', () => {
 });
 
 client.on('ready', () => {
-  console.log('>>> ¡WHATSAPP VINCULADO CON ÉXITO (READY)!');
+  console.log('>>> ¡WHATSAPP 100% OPERATIVO (READY)!');
   estadoWhatsApp = 'conectado';
   qrActual = null;
-});
-
-// Detector de cambio de estado interno de WhatsApp
-client.on('change_state', (state) => {
-  console.log('>>> ESTADO INTERNO WHATSAPP:', state);
-  if (state === 'CONNECTED') {
-    estadoWhatsApp = 'conectado';
-    qrActual = null;
-  }
 });
 
 client.on('disconnected', (reason) => {
@@ -111,7 +102,7 @@ client.on('disconnected', (reason) => {
 
 function iniciarWhatsApp() {
   client.initialize().catch((err) => {
-    console.error('Aviso de espera en WhatsApp (reintentando en segundo plano):', err.message);
+    console.error('Aviso inicialización:', err.message);
   });
 }
 
@@ -127,23 +118,27 @@ function formatearTelefono(numero) {
   return `${limpio}@c.us`;
 }
 
-// 4. RUTAS API (CON DETECCIÓN FORZADA DE SESIÓN ACTIVA)
-app.get('/api/whatsapp-status', async (req, res) => {
-  // Si WhatsApp ya cargó la información del usuario (wid), forzar estado CONECTADO
+// Comprobar si los módulos de chat están listos para enviar
+async function modulosListos() {
   try {
-    if (client.info && client.info.wid) {
+    if (!client.pupPage) return false;
+    return await client.pupPage.evaluate(() => {
+      return typeof window.WWebJS !== 'undefined' && typeof window.Store !== 'undefined';
+    });
+  } catch (e) {
+    return false;
+  }
+}
+
+// 4. RUTAS API
+app.get('/api/whatsapp-status', async (req, res) => {
+  try {
+    const listos = await modulosListos();
+    if (listos) {
       estadoWhatsApp = 'conectado';
       qrActual = null;
-    } else if (client.pupPage) {
-      const state = await client.getState().catch(() => null);
-      if (state === 'CONNECTED') {
-        estadoWhatsApp = 'conectado';
-        qrActual = null;
-      }
     }
-  } catch (e) {
-    // Continúa normalmente
-  }
+  } catch (e) {}
 
   res.json({
     estado: estadoWhatsApp,
@@ -159,6 +154,19 @@ app.get('/api/contactos', (req, res) => {
   res.json(lista.sort((a, b) => b.id - a.id));
 });
 
+// Ruta para restablecer rechazados a pendientes
+app.post('/api/contactos/restablecer-pendientes', (req, res) => {
+  let lista = leerContactos();
+  lista.forEach(c => {
+    if (c.estado === 'Rechazado') {
+      c.estado = 'Pendiente';
+      c.observaciones = '';
+    }
+  });
+  guardarContactos(lista);
+  res.json({ success: true });
+});
+
 app.delete('/api/contactos/:id', (req, res) => {
   const id = parseInt(req.params.id);
   let lista = leerContactos();
@@ -170,13 +178,11 @@ app.delete('/api/contactos/:id', (req, res) => {
 app.post('/api/contactos/eliminar-masivo', (req, res) => {
   const { ids } = req.body;
   if (!ids || !ids.length) return res.status(400).json({ error: "No hay IDs" });
-
   const idsNum = ids.map(id => parseInt(id));
   let lista = leerContactos();
   const inicial = lista.length;
   lista = lista.filter(c => !idsNum.includes(c.id));
   guardarContactos(lista);
-
   res.json({ success: true, eliminados: inicial - lista.length });
 });
 
@@ -198,21 +204,25 @@ app.put('/api/contactos/:id/estado', (req, res) => {
   res.json({ success: true });
 });
 
-// 5. IMPORTAR EXCEL (CINTILLO OFICIAL)
+// 5. IMPORTAR EXCEL (CONVERTIR FECHAS Y HEADERS CON TOTAL SEGURIDAD)
 app.post('/api/subir-excel', upload.single('archivoExcel'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Falta archivo' });
   try {
-    const wb = XLSX.readFile(req.file.path);
-    const filas = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+    const wb = XLSX.readFile(req.file.path, { cellDates: true });
+    const filas = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { raw: false });
     const lista = leerContactos();
 
     let proximoId = lista.reduce((max, c) => c.id > max ? c.id : max, 0) + 1;
-    const fechaHoy = new Date().toISOString().split('T')[0];
+    const fechaHoy = new Date().toLocaleDateString('es-ES');
     let count = 0;
 
     filas.forEach(f => {
-      const fecha = f['Fecha de carga'] || f['Fecha'] || f['fecha'] || fechaHoy;
-      const rawTel = f['Nº Portabilidad'] || f['N° Portabilidad'] || f['Portabilidad'] || f['Telefono'] || f['telefono'] || f['Celular'] || '';
+      // Obtener fecha limpia en formato texto
+      let fechaTexto = f['Fecha de carga'] || f['Fecha'] || f['fecha'] || fechaHoy;
+      if (typeof fechaTexto !== 'string') fechaTexto = String(fechaTexto);
+
+      // Soportar variantes de "Nº Portabilidad"
+      const rawTel = f['Nº Portabilidad'] || f['N° Portabilidad'] || f['No Portabilidad'] || f['Portabilidad'] || f['Telefono'] || f['telefono'] || f['Celular'] || '';
       const telefono = String(rawTel).replace(/[^0-9]/g, '');
       const nombre = f['Nombres'] || f['Nombre'] || f['nombres'] || f['nombre'] || '';
       const apellido = f['Apellidos'] || f['Apellido'] || f['apellidos'] || f['apellido'] || '';
@@ -220,7 +230,7 @@ app.post('/api/subir-excel', upload.single('archivoExcel'), (req, res) => {
       if (telefono) {
         lista.push({
           id: proximoId++,
-          fecha: fecha,
+          fecha: fechaTexto,
           telefono: telefono,
           nombre: nombre,
           apellido: apellido,
@@ -239,7 +249,7 @@ app.post('/api/subir-excel', upload.single('archivoExcel'), (req, res) => {
   }
 });
 
-// 6. DESCARGAR EXCEL CON CINTILLO OFICIAL
+// 6. DESCARGAR EXCEL
 app.get('/api/descargar-excel', (req, res) => {
   const lista = leerContactos();
   const formateados = lista.map(r => ({
@@ -254,17 +264,17 @@ app.get('/api/descargar-excel', (req, res) => {
   const ws = XLSX.utils.json_to_sheet(formateados);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Base_Datos_BIARTET");
-
   const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
   res.setHeader('Content-Disposition', 'attachment; filename="Base_Datos_BIARTET.xlsx"');
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.send(buffer);
 });
 
-// 7. ENVÍO MASIVO REAL
+// 7. ENVÍO MASIVO REAL SEGURO
 app.post('/api/enviar-masivo', async (req, res) => {
-  if (estadoWhatsApp !== 'conectado') {
-    return res.status(400).json({ error: "WhatsApp no está listo. Por favor espera a que se complete la conexión." });
+  const listos = await modulosListos();
+  if (!listos) {
+    return res.status(400).json({ error: "WhatsApp aún está sincronizando los módulos de chat con tu celular. Espera 15 segundos y presiona Enviar de nuevo." });
   }
   if (enProcesoEnvio) {
     return res.status(400).json({ error: "Ya hay una campaña de envío en ejecución." });
@@ -275,11 +285,11 @@ app.post('/api/enviar-masivo', async (req, res) => {
   const pendientes = lista.filter(c => c.estado === 'Pendiente');
 
   if (pendientes.length === 0) {
-    return res.json({ mensaje: "No hay clientes en estado 'Pendiente'." });
+    return res.json({ mensaje: "No hay contactos en estado 'Pendiente'." });
   }
 
   enProcesoEnvio = true;
-  res.json({ mensaje: `Iniciando envío seguro a ${pendientes.length} contactos.` });
+  res.json({ mensaje: `Iniciando envío a ${pendientes.length} contactos.` });
 
   for (const c of pendientes) {
     try {
@@ -290,16 +300,18 @@ app.post('/api/enviar-masivo', async (req, res) => {
       await client.sendMessage(chatId, texto);
 
       c.estado = 'Enviado';
+      console.log(`✅ Entregado a ${c.nombre} ${c.apellido}`);
     } catch (e) {
       console.error(`Error enviando a ${c.telefono}:`, e.message);
-      c.estado = 'Rechazado';
-      c.observaciones = 'Fallo en envío o no tiene WhatsApp';
+      // Solo marcar rechazado si es fallo real de número, no si el motor se interrumpió
+      if (!e.message.includes('getChat')) {
+        c.estado = 'Rechazado';
+        c.observaciones = 'Fallo en envío o no tiene WhatsApp';
+      }
     }
 
     guardarContactos(lista);
-
     const delay = Math.floor(Math.random() * (20000 - 10000 + 1)) + 10000;
-    console.log(`Pausa de seguridad: ${delay / 1000}s...`);
     await sleep(delay);
   }
 

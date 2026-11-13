@@ -68,11 +68,12 @@ const client = new Client({
       '--disable-gpu',
       '--no-first-run'
     ]
-  },
-  webVersionCache: {
-    type: 'remote',
-    remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html'
   }
+});
+
+// Ver el porcentaje de carga en los logs de Render
+client.on('loading_screen', (percent, message) => {
+  console.log(`>>> CARGANDO CHATS: ${percent}% - ${message}`);
 });
 
 client.on('qr', async (qr) => {

@@ -8,6 +8,7 @@ const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode');
 
 const app = express();
+// Railway asigna el puerto mediante process.env.PORT
 const PORT = process.env.PORT || 4000;
 const upload = multer({ dest: 'uploads/' });
 
@@ -15,7 +16,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'Frontend', 'public')));
 
-// 1. BASE DE DATOS JSON NATIVA
+// 1. BASE DE DATOS JSON NATIVA (CERO DEPENDENCIAS C++ O GLIBC)
 const DB_FILE = path.join(__dirname, 'contactos.json');
 
 function leerContactos() {
@@ -34,8 +35,13 @@ function guardarContactos(lista) {
   fs.writeFileSync(DB_FILE, JSON.stringify(lista, null, 2), 'utf8');
 }
 
-// 2. DETECCIÓN DE NAVEGADOR
+// 2. DETECCIÓN AUTOMÁTICA DEL NAVEGADOR (RAILWAY, LINUX Y WINDOWS)
 function obtenerRutaNavegador() {
+  // Variable automática de Railway / Nixpacks
+  if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+    return process.env.PUPPETEER_EXECUTABLE_PATH;
+  }
+  // Windows local
   if (process.platform === 'win32') {
     const rutasWin = [
       'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
@@ -47,12 +53,21 @@ function obtenerRutaNavegador() {
       if (fs.existsSync(r)) return r;
     }
   }
+  // Linux / Servidores
+  const rutasLinux = [
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/google-chrome-stable'
+  ];
+  for (const r of rutasLinux) {
+    if (fs.existsSync(r)) return r;
+  }
   return undefined;
 }
 
-// 3. WHATSAPP CLIENT (EL QUE YA TE VINCULABA)
+// 3. WHATSAPP CLIENT OPTIMIZADO PARA RAILWAY
 let qrActual = null;
-let estadoWhatsApp = 'desconectado';
+let estadoWhatsApp = 'desconectado'; // 'desconectado' | 'sincronizando' | 'conectado'
 let enProcesoEnvio = false;
 
 const client = new Client({
@@ -82,9 +97,13 @@ client.on('qr', async (qr) => {
 });
 
 client.on('authenticated', () => {
-  console.log('>>> ¡ESCANEADO CON ÉXITO! Sincronizando sesión...');
+  console.log('>>> ¡ESCANEADO CON ÉXITO! Sincronizando con el teléfono...');
   qrActual = null;
   estadoWhatsApp = 'sincronizando';
+});
+
+client.on('loading_screen', (percent, message) => {
+  console.log(`>>> CARGANDO CHATS: ${percent}% - ${message}`);
 });
 
 client.on('ready', () => {
@@ -94,7 +113,7 @@ client.on('ready', () => {
 });
 
 client.on('change_state', (state) => {
-  console.log('>>> ESTADO INTERNO:', state);
+  console.log('>>> ESTADO INTERNO WHATSAPP:', state);
   if (state === 'CONNECTED') {
     estadoWhatsApp = 'conectado';
     qrActual = null;
@@ -110,7 +129,7 @@ client.on('disconnected', (reason) => {
 
 function iniciarWhatsApp() {
   client.initialize().catch((err) => {
-    console.error('Aviso inicialización:', err.message);
+    console.error('Aviso de inicialización (reintentando en segundo plano):', err.message);
   });
 }
 
@@ -126,7 +145,9 @@ function formatearTelefono(numero) {
   return `${limpio}@c.us`;
 }
 
-// 4. RUTAS API (RESTAURADA LA DETECCIÓN EFECTIVA)
+// 4. RUTAS DE LA API
+
+// Estado en vivo
 app.get('/api/whatsapp-status', async (req, res) => {
   try {
     if (client.info && client.info.wid) {
@@ -150,6 +171,7 @@ app.get('/api/whatsapp-status', async (req, res) => {
   });
 });
 
+// Obtener contactos
 app.get('/api/contactos', (req, res) => {
   const lista = leerContactos();
   res.json(lista.sort((a, b) => b.id - a.id));
@@ -166,6 +188,7 @@ app.post('/api/contactos/restablecer-pendientes', (req, res) => {
   res.json({ success: true });
 });
 
+// Eliminar individual
 app.delete('/api/contactos/:id', (req, res) => {
   const id = parseInt(req.params.id);
   let lista = leerContactos();
@@ -174,22 +197,27 @@ app.delete('/api/contactos/:id', (req, res) => {
   res.json({ success: true });
 });
 
+// Eliminar masivo
 app.post('/api/contactos/eliminar-masivo', (req, res) => {
   const { ids } = req.body;
   if (!ids || !ids.length) return res.status(400).json({ error: "No hay IDs" });
+
   const idsNum = ids.map(id => parseInt(id));
   let lista = leerContactos();
   const inicial = lista.length;
   lista = lista.filter(c => !idsNum.includes(c.id));
   guardarContactos(lista);
+
   res.json({ success: true, eliminados: inicial - lista.length });
 });
 
+// Vaciar base de datos
 app.delete('/api/contactos-todos', (req, res) => {
   guardarContactos([]);
   res.json({ success: true });
 });
 
+// Actualizar CRM
 app.put('/api/contactos/:id/estado', (req, res) => {
   const id = parseInt(req.params.id);
   const { estado, observaciones } = req.body;
@@ -203,7 +231,7 @@ app.put('/api/contactos/:id/estado', (req, res) => {
   res.json({ success: true });
 });
 
-// 5. IMPORTAR EXCEL (LECTURA SEGURA DE FECHAS)
+// 5. IMPORTAR EXCEL (CINTILLO OFICIAL)
 app.post('/api/subir-excel', upload.single('archivoExcel'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Falta archivo' });
   try {
@@ -244,7 +272,7 @@ app.post('/api/subir-excel', upload.single('archivoExcel'), (req, res) => {
   }
 });
 
-// 6. DESCARGAR EXCEL
+// 6. DESCARGAR EXCEL CON CINTILLO OFICIAL
 app.get('/api/descargar-excel', (req, res) => {
   const lista = leerContactos();
   const formateados = lista.map(r => ({
@@ -259,13 +287,14 @@ app.get('/api/descargar-excel', (req, res) => {
   const ws = XLSX.utils.json_to_sheet(formateados);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Base_Datos_BIARTET");
+
   const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
   res.setHeader('Content-Disposition', 'attachment; filename="Base_Datos_BIARTET.xlsx"');
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.send(buffer);
 });
 
-// 7. ENVÍO MASIVO REAL CON PROTECCIÓN ANTI-GETCHAT
+// 7. ENVÍO MASIVO REAL BLINDADO CONTRA GETCHAT
 app.post('/api/enviar-masivo', async (req, res) => {
   if (estadoWhatsApp !== 'conectado') {
     return res.status(400).json({ error: "WhatsApp no está listo aún. Espera unos segundos a que diga Conectado." });
@@ -285,7 +314,7 @@ app.post('/api/enviar-masivo', async (req, res) => {
   enProcesoEnvio = true;
   res.json({ mensaje: `Iniciando envío a ${pendientes.length} contactos.` });
 
-  // Asegurar que las librerías de chat estén inyectadas antes de empezar
+  // Inyección previa de seguridad
   try {
     await client.inject().catch(() => {});
     await sleep(2000);
@@ -304,7 +333,7 @@ app.post('/api/enviar-masivo', async (req, res) => {
     } catch (e) {
       console.error(`Aviso en envío a ${c.telefono}:`, e.message);
 
-      // Si da el error getChat, reinyecta WWebJS y reintenta inmediatamente
+      // Reintento inteligente si faltaba el módulo de chat
       if (e.message.includes('getChat') || e.message.includes('undefined')) {
         try {
           console.log('Reinyectando módulos de mensajería y reintentando...');
@@ -334,4 +363,5 @@ app.post('/api/enviar-masivo', async (req, res) => {
   console.log(">>> Campaña finalizada.");
 });
 
+// 8. ARRANQUE DEL SERVIDOR
 app.listen(PORT, () => console.log(`Servidor BIARTET activo en puerto ${PORT}`));

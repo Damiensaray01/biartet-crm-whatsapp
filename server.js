@@ -50,7 +50,7 @@ function obtenerRutaNavegador() {
   return undefined;
 }
 
-// 3. WHATSAPP CLIENT
+// 3. WHATSAPP CLIENT (EL QUE YA TE VINCULABA)
 let qrActual = null;
 let estadoWhatsApp = 'desconectado';
 let enProcesoEnvio = false;
@@ -82,15 +82,23 @@ client.on('qr', async (qr) => {
 });
 
 client.on('authenticated', () => {
-  console.log('>>> ¡ESCANEADO CON ÉXITO! Sincronizando con el teléfono...');
+  console.log('>>> ¡ESCANEADO CON ÉXITO! Sincronizando sesión...');
   qrActual = null;
   estadoWhatsApp = 'sincronizando';
 });
 
 client.on('ready', () => {
-  console.log('>>> ¡WHATSAPP 100% OPERATIVO (READY)!');
+  console.log('>>> ¡WHATSAPP 100% VINCULADO (READY)!');
   estadoWhatsApp = 'conectado';
   qrActual = null;
+});
+
+client.on('change_state', (state) => {
+  console.log('>>> ESTADO INTERNO:', state);
+  if (state === 'CONNECTED') {
+    estadoWhatsApp = 'conectado';
+    qrActual = null;
+  }
 });
 
 client.on('disconnected', (reason) => {
@@ -118,25 +126,18 @@ function formatearTelefono(numero) {
   return `${limpio}@c.us`;
 }
 
-// Comprobar si los módulos de chat están listos para enviar
-async function modulosListos() {
-  try {
-    if (!client.pupPage) return false;
-    return await client.pupPage.evaluate(() => {
-      return typeof window.WWebJS !== 'undefined' && typeof window.Store !== 'undefined';
-    });
-  } catch (e) {
-    return false;
-  }
-}
-
-// 4. RUTAS API
+// 4. RUTAS API (RESTAURADA LA DETECCIÓN EFECTIVA)
 app.get('/api/whatsapp-status', async (req, res) => {
   try {
-    const listos = await modulosListos();
-    if (listos) {
+    if (client.info && client.info.wid) {
       estadoWhatsApp = 'conectado';
       qrActual = null;
+    } else if (client.pupPage) {
+      const state = await client.getState().catch(() => null);
+      if (state === 'CONNECTED') {
+        estadoWhatsApp = 'conectado';
+        qrActual = null;
+      }
     }
   } catch (e) {}
 
@@ -154,14 +155,12 @@ app.get('/api/contactos', (req, res) => {
   res.json(lista.sort((a, b) => b.id - a.id));
 });
 
-// Ruta para restablecer rechazados a pendientes
+// Restablecer rechazados a pendientes
 app.post('/api/contactos/restablecer-pendientes', (req, res) => {
   let lista = leerContactos();
   lista.forEach(c => {
-    if (c.estado === 'Rechazado') {
-      c.estado = 'Pendiente';
-      c.observaciones = '';
-    }
+    c.estado = 'Pendiente';
+    c.observaciones = '';
   });
   guardarContactos(lista);
   res.json({ success: true });
@@ -204,11 +203,11 @@ app.put('/api/contactos/:id/estado', (req, res) => {
   res.json({ success: true });
 });
 
-// 5. IMPORTAR EXCEL (CONVERTIR FECHAS Y HEADERS CON TOTAL SEGURIDAD)
+// 5. IMPORTAR EXCEL (LECTURA SEGURA DE FECHAS)
 app.post('/api/subir-excel', upload.single('archivoExcel'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Falta archivo' });
   try {
-    const wb = XLSX.readFile(req.file.path, { cellDates: true });
+    const wb = XLSX.readFile(req.file.path, { cellDates: false });
     const filas = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { raw: false });
     const lista = leerContactos();
 
@@ -217,11 +216,7 @@ app.post('/api/subir-excel', upload.single('archivoExcel'), (req, res) => {
     let count = 0;
 
     filas.forEach(f => {
-      // Obtener fecha limpia en formato texto
-      let fechaTexto = f['Fecha de carga'] || f['Fecha'] || f['fecha'] || fechaHoy;
-      if (typeof fechaTexto !== 'string') fechaTexto = String(fechaTexto);
-
-      // Soportar variantes de "Nº Portabilidad"
+      const fechaTexto = String(f['Fecha de carga'] || f['Fecha'] || f['fecha'] || fechaHoy);
       const rawTel = f['Nº Portabilidad'] || f['N° Portabilidad'] || f['No Portabilidad'] || f['Portabilidad'] || f['Telefono'] || f['telefono'] || f['Celular'] || '';
       const telefono = String(rawTel).replace(/[^0-9]/g, '');
       const nombre = f['Nombres'] || f['Nombre'] || f['nombres'] || f['nombre'] || '';
@@ -270,11 +265,10 @@ app.get('/api/descargar-excel', (req, res) => {
   res.send(buffer);
 });
 
-// 7. ENVÍO MASIVO REAL SEGURO
+// 7. ENVÍO MASIVO REAL CON PROTECCIÓN ANTI-GETCHAT
 app.post('/api/enviar-masivo', async (req, res) => {
-  const listos = await modulosListos();
-  if (!listos) {
-    return res.status(400).json({ error: "WhatsApp aún está sincronizando los módulos de chat con tu celular. Espera 15 segundos y presiona Enviar de nuevo." });
+  if (estadoWhatsApp !== 'conectado') {
+    return res.status(400).json({ error: "WhatsApp no está listo aún. Espera unos segundos a que diga Conectado." });
   }
   if (enProcesoEnvio) {
     return res.status(400).json({ error: "Ya hay una campaña de envío en ejecución." });
@@ -291,27 +285,48 @@ app.post('/api/enviar-masivo', async (req, res) => {
   enProcesoEnvio = true;
   res.json({ mensaje: `Iniciando envío a ${pendientes.length} contactos.` });
 
+  // Asegurar que las librerías de chat estén inyectadas antes de empezar
+  try {
+    await client.inject().catch(() => {});
+    await sleep(2000);
+  } catch (e) {}
+
   for (const c of pendientes) {
+    const texto = plantillaMensaje.replace('{nombre}', c.nombre).replace('{apellido}', c.apellido);
+    const chatId = formatearTelefono(c.telefono);
+
+    console.log(`[BIARTET ENVÍO REAL A ${chatId}]`);
+
     try {
-      const texto = plantillaMensaje.replace('{nombre}', c.nombre).replace('{apellido}', c.apellido);
-      const chatId = formatearTelefono(c.telefono);
-
-      console.log(`[BIARTET ENVÍO REAL A ${chatId}]`);
       await client.sendMessage(chatId, texto);
-
       c.estado = 'Enviado';
       console.log(`✅ Entregado a ${c.nombre} ${c.apellido}`);
     } catch (e) {
-      console.error(`Error enviando a ${c.telefono}:`, e.message);
-      // Solo marcar rechazado si es fallo real de número, no si el motor se interrumpió
-      if (!e.message.includes('getChat')) {
+      console.error(`Aviso en envío a ${c.telefono}:`, e.message);
+
+      // Si da el error getChat, reinyecta WWebJS y reintenta inmediatamente
+      if (e.message.includes('getChat') || e.message.includes('undefined')) {
+        try {
+          console.log('Reinyectando módulos de mensajería y reintentando...');
+          await client.inject().catch(() => {});
+          await sleep(3000);
+          await client.sendMessage(chatId, texto);
+          c.estado = 'Enviado';
+          console.log(`✅ Entregado con éxito en reintento a ${c.nombre} ${c.apellido}`);
+        } catch (reintentoErr) {
+          console.error('Fallo en reintento:', reintentoErr.message);
+          c.estado = 'Rechazado';
+          c.observaciones = 'Error al procesar chat';
+        }
+      } else {
         c.estado = 'Rechazado';
-        c.observaciones = 'Fallo en envío o no tiene WhatsApp';
+        c.observaciones = 'Número inválido o sin WhatsApp';
       }
     }
 
     guardarContactos(lista);
     const delay = Math.floor(Math.random() * (20000 - 10000 + 1)) + 10000;
+    console.log(`Pausa de seguridad: ${delay / 1000}s...`);
     await sleep(delay);
   }
 
